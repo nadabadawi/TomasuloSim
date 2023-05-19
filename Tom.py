@@ -41,6 +41,14 @@ class Tomasulo:
             "R7": 7
         }
 
+        word_size = 4  #size in bytes
+        address_size = 16  #address in bits
+        memory_capacity = 128 * 1024  #Memory capacity in bytes
+        num_words = memory_capacity // word_size  # Number of words in the memory
+
+        # Create a list of words in the memory, initialized with zeros
+        self.memory = [0] * num_words
+        
         # find the sum of the values in num_rs
         # self.total_rs = sum(num_rs.values())
         # for inst in inst_type:
@@ -181,37 +189,81 @@ class Tomasulo:
             for inst in self.inst_types:
                 for i in range(self.num_rs[inst]):
                     if self.rs[inst][i].qj == 0: # && r is at the head of the load-store queue
-                        return
-            # To be continued...
+                        self.rs[inst][i].A = self.rs[inst][i].vj + self.rs[inst][i].A
+                        # Lec 18 Slide 6
 
         elif operation == "STORE":
             for inst in self.inst_types:
                 for i in range(self.num_rs[inst]):
                     if self.rs[inst][i].qj == 0: # && r is at the head of the load-store queue
-                        return
-            # To be continued...
+                        self.rs[inst][i].A = self.rs[inst][i].vj + self.rs[inst][i].A
+                        # Lec 18 Slide 7.
 
         else: 
             for inst in self.inst_types:
                 for i in range(self.num_rs[inst]):
                     if self.rs[inst][i].qj == 0 and self.rs[inst][i].qk == 0:
-                        self.compute_result()
+                        self.compute_result(operation, i)
         return
     
-    def compute_result(self):
+    def compute_result(self, operation, r):
         # Set the executed bool of the rs to "True" here or before returning from the execute function
+        self.rs[operation][r].executed = True
+
         # Consider the number of cycles required for execution.
+        cycles = self.instruction_cycles[operation]
+
+        # Wait for the specified number of cycles before returning the result.
+        for _ in range(cycles):
+            pass
         # To be continued...
-        return
-    
+        
+        if(operation == "ADD"):
+            self.rs[operation][r].result = self.rs[operation][r].vj + self.rs[operation][r].vk
+        
+        elif (operation == "ADDI"):
+            self.rs[operation][r].result = self.rs[operation][r].vj + self.rs[operation][r].A
+        
+        elif (operation == "NEG"):
+            self.rs[operation][r].result = -self.rs[operation][r].vj
+
+        elif (operation == "NAND"):
+            self.rs[operation][r].result = ~(self.rs[operation][r].vj & self.rs[operation][r].vk)
+        
+        elif (operation == "SLL"):
+            self.rs[operation][r].result = self.rs[operation][r].vj << self.rs[operation][r].A   
+        
+        
     def write(self, operation):
         if operation == "STORE":
             for r in range(self.num_rs[operation]):
-                # To be continued...
-                return
+                if (self.rs[operation][r].executed == True and  self.rs[operation][r].qk == 0):
+                    self.rs[operation][r].busy = False
+                    self.rs[operation][r].executed = False
+                    self.rs[operation][r].vj = None
+                    self.rs[operation][r].vk = None
+                    self.rs[operation][r].qj = None
+                    self.rs[operation][r].qk = None
+                    self.rs[operation][r].result = None
+                    self.rs[operation][r].A = None
+                    self.memory[self.rs[operation][r].A] = self.rs[operation][r].vk
         else: # To be continued...
-            return
-    
+            for x in range(self.num_rs[operation]):
+                if (self.rs[operation][x].executed == True): #CDB is free
+                    
+                    # if (self.register_stat[x].qi == r):
+                    #     self.RegFile[x] = self.rs[operation][r].result
+                    #     self.register_stat[x].qi = 0
+                    
+                    if (self.rs[operation][x].qj == r):
+                        self.rs[operation][x].vj = self.rs[operation][r].result
+                        self.rs[operation][x].qj = 0
+                        
+                    if(self.rs[operation][x].qk == r):
+                        self.rs[operation][x].vk = self.rs[operation][r].result
+                        self.rs[operation][x].qk = 0
+                    
+                    self.rs[operation][r].busy = False
 
     def print_reservation_stations(self):
         print("Reservation Stations:")
