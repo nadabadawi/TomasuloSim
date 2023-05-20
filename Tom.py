@@ -190,6 +190,9 @@ class Tomasulo:
                 for i in range(self.num_rs[inst]):
                     if self.rs[inst][i].qj == 0: # && r is at the head of the load-store queue
                         self.rs[inst][i].A = self.rs[inst][i].vj + self.rs[inst][i].A
+                        #read from memory at address A
+                        # Add rd to REGFILE From rs
+                        # self.regFile[] = self.memory[self.rs[inst][i].A]
                         # Lec 18 Slide 6
 
         elif operation == "STORE":
@@ -264,6 +267,13 @@ class Tomasulo:
                         self.rs[operation][x].qk = 0
                     
                     self.rs[operation][r].busy = False
+                    # self.rs[operation][r].executed = False
+                    # self.rs[operation][r].vj = None
+                    # self.rs[operation][r].vk = None
+                    # self.rs[operation][r].qj = None
+                    # self.rs[operation][r].qk = None
+                    # self.rs[operation][r].result = None
+                    # self.rs[operation][r].A = None
 
     def print_reservation_stations(self):
         print("Reservation Stations:")
