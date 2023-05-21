@@ -54,7 +54,7 @@ class Tomasulo:
         self.instuction_cycles = instruction_cycles
         self.cdb = True
         self.num_rs = num_rs
-        self.clock_cycles = 1
+        self.clock_cycles = 0
         # self.executed_cycles = 0
         self.RegFile = {
             "R0": 0,
@@ -246,9 +246,9 @@ class Tomasulo:
         return
 
     def check_to_execute(self, operation, i): ############# REMAINING JAL AND RET
-        if (operation == "ADD"):
-            print("************************************************************************************************")
-            print("Issue Cycle: ", self.rs[operation][i].issue_cycle, " and clock cycles: ", self.clock_cycles)
+        
+        print("************************************************************************************************")
+        print("Instruction: ", operation, " ---  Issue Cycle: ", self.rs[operation][i].issue_cycle, " and clock cycles: ", self.clock_cycles)
         if self.rs[operation][i].total_ex_cycles <= 0:
             if (operation == "ADD"):
                 print("Breaking out of the execute function")
@@ -289,14 +289,15 @@ class Tomasulo:
         else:
             if (self.rs[operation][i].qj == None and self.rs[operation][i].qk == None):
                 print("I am executing in cycle: ", self.clock_cycles)
-                self.compute_result(self.rs[operation][i].op, i)
                 self.rs[operation][i].execute_cycle = self.clock_cycles
                 self.rs[operation][i].total_ex_cycles -= 1
+                self.compute_result(self.rs[operation][i].op, i)
         return
 
     def compute_result(self, operation, r):
         # Set the executed bool of the rs to "True" here or before returning from the execute function
-        self.rs[operation][r].executed = True
+        if (self.rs[operation][r].total_ex_cycles == 0):
+            self.rs[operation][r].executed = True
 
         if (operation == "ADD"):
             self.rs[operation][r].result = self.rs[operation][r].vj + \
@@ -452,6 +453,7 @@ class Tomasulo:
         # Each iteration represents a clock cycle
         while True:
             ctr = 0
+            self.clock_cycles += 1
             print("I am standing in the begining of the while loop")
             # for i in range(70):
             #     print('*', end='')
@@ -464,12 +466,13 @@ class Tomasulo:
                     pc += 1
             self.execute_all()
             self.write_all()
-            self.clock_cycles += 1
+            
             # print("Just Incremented the clock cycles by 1")
-            for inst in self.inst_types: #check if rs are empty
-                for i in range(self.num_rs[inst]):
-                    if (self.rs[inst][i].busy == False):
-                        ctr += 1
+            if (pc == len(self.instructions)):
+                for inst in self.inst_types: #check if rs are empty
+                    for i in range(self.num_rs[inst]):
+                        if (self.rs[inst][i].busy == False):
+                            ctr += 1
             # and pc == len(self.instructions)):
             # print("Counter: ", ctr, " Sum: ", sum(self.num_rs.values()))
             if (ctr == sum(self.num_rs.values())): #check if pc is last instruction
@@ -513,10 +516,10 @@ execution_cycles = {
     "BNE": 1,
     "JAL": 1,
     "RET": 1,
-    "ADD": 1,
+    "ADD": 3,
     "ADDI": 1,
     "NEG": 1,
-    "NAND": 1,
+    "NAND": 6,
     "SLL": 1
 }
 
