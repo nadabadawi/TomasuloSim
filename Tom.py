@@ -71,8 +71,8 @@ class Tomasulo:
         word_size = 4  # size in bytes
         address_size = 16  # address in bits
         memory_capacity = 128 * 1024  # Memory capacity in bytes
-        num_words = memory_capacity // word_size  # Number of words in the memory
-
+        # num_words = memory_capacity // word_size  # Number of words in the memory
+        num_words = 5
         # Create a list of words in the memory, initialized with zeros
         self.memory = [0] * num_words
         
@@ -595,6 +595,7 @@ class Tomasulo:
 
     def memory_state(self):
         print("\nMemory State:\n")
+        # print(self.memory[address])
         for i in range(len(self.memory)):
             print(f"{i}: {self.memory[i]}")
 
@@ -636,10 +637,10 @@ class Tomasulo:
             #     break   
 
         print("Execution completed.")
-        self.print_reservation_stations()
-        self.print_register_status()
-        self.register_file()
-        # self.memory_state()
+        # self.print_reservation_stations()
+        # self.print_register_status()
+        # self.register_file()
+        self.memory_state()
 
         print("Total Clock Cycles: ", self.clock_cycles)
 
@@ -663,6 +664,7 @@ class MainMenu:
 #     {"op": "NAND", "rd": "R5", "rs1": "R3", "rs2": "R6"},
 # ]
 instructions = [
+    {"op": "STORE", "rs1": "R1", "rs2": "R2", "imm": 0},
     # {"op": "ADD", "rd": "R1", "rs1": "R2", "rs2": "R3"},
     # {"op": "NAND", "rd": "R4", "rs1": "R5", "rs2": "R6"},
     # {"op": "JAL", "imm": 2},
