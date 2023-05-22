@@ -1,9 +1,6 @@
 # Notes:
 #   - Need to read from a file and parse into a similar array (input instruction array)
 #   - Validation of instructions provided should be handled. Ex: Register names and bounds should be valid & their format
-#   - Simulating Clock Cycles are not yet implemented
-#   - Number of execution cycles for each instruction should be input from the user
-#   - Need to implement the load-store queue (probably) (NOT NEEDED)
 #   - Need to give priority to older instruction to write
 #   - Ensure that R0 does not get overwritten
 
@@ -11,15 +8,17 @@
 #   - Registers and Memory should be taken into account and implemented
 #   - Reservation station and functional units have a 1-to-1 relationship
 #   - Need to update the qj/k to none after writing an instruction
+#   - Simulating Clock Cycles is implemented
+#   - Number of execution cycles for each instruction should be input from the user
 
 
 ##############################
 #What's Left:
-# Clock cycles stalling
+# Stall cycles from executing in case of branch
+# WAW Hazard
 # Flushing for BNE
 # JAL and RET Stalling
 # Storing/Loading addresses are not equal --> if they are, do not issue second instruction
-# Return is R1
 
 class ReservationStation:
     def __init__(self, index, name, op, busy=False, vj=None, vk=None, qj=None, qk=None, rd=None, offset=None, A=None, pc = None):
@@ -56,6 +55,7 @@ class Tomasulo:
         self.num_rs = num_rs
         self.clock_cycles = 0
         # self.executed_cycles = 0
+        self.glob_pc = 0
         self.RegFile = {
             "R0": 0,
             "R1": 1,
@@ -74,7 +74,12 @@ class Tomasulo:
 
         # Create a list of words in the memory, initialized with zeros
         self.memory = [0] * num_words
+        
+        #branch queue
+        self.branch_queue = []
+        self.branch_issued = False
 
+       
         self.rs = {
             "LOAD": [None] * num_rs["LOAD"],
             "STORE": [None] * num_rs["STORE"],
@@ -147,20 +152,26 @@ class Tomasulo:
         return
 
     def fetch(self, pc):
-        if (self.flush == True):
-            self.flush = False
-            return None
+        # if (self.flush == True):
+        #     self.flush = False
+        #     return None
         
         if pc < len(self.instructions):
+            print("Fetched instruction with ")
             return self.instructions[pc]
         
     def issue(self, instruction, pc):
         # For Tracing Purposes
-        print("\nInstruction: ", instruction.get("op"), instruction.get(
-            "rd"), instruction.get("rs1"), instruction.get("rs2"), "\n")
-
+        # print("\nInstruction: ", instruction.get("op"), instruction.get(
+            # "rd"), instruction.get("rs1"), instruction.get("rs2"), "\n")
+        print("Issue Stage of clock cycle: ", self.clock_cycles)
         # issued = False
         operation = instruction.get("op")
+
+        for [op, index] in self.branch_queue:
+            if pc == self.rs[op][index].pc:
+                print("I am stalling in clock cycle: ", self.clock_cycles, " because of branch")
+                return True
 
         if operation == "LOAD":
             rs1 = instruction.get("rs1")
@@ -174,6 +185,10 @@ class Tomasulo:
                     self.rs[operation][r].busy = True
                     self.rs[operation][r].total_ex_cycles = self.instuction_cycles[operation]
                     self.rs[operation][r].issue_cycle = self.clock_cycles
+                    self.rs[operation][r].pc = pc
+                    print("I was issued in clock cycle: ", self.clock_cycles, ", OPERATION: ", operation)
+                    if (self.branch_issued == True):
+                        self.branch_queue.append([operation, r])
                     return True
 
         elif operation == "STORE":
@@ -187,6 +202,10 @@ class Tomasulo:
                     self.rs[operation][r].busy = True
                     self.rs[operation][r].total_ex_cycles = self.instuction_cycles[operation]
                     self.rs[operation][r].issue_cycle = self.clock_cycles
+                    self.rs[operation][r].pc = pc
+                    print("I was issued in clock cycle: ", self.clock_cycles, " , OPERATION: ", operation)
+                    if (self.branch_issued == True):
+                        self.branch_queue.append([operation, r])
                     return True
         
         elif operation == "BNE":
@@ -202,6 +221,10 @@ class Tomasulo:
                     self.rs[operation][r].busy = True
                     self.rs[operation][r].total_ex_cycles = self.instuction_cycles[operation]
                     self.rs[operation][r].issue_cycle = self.clock_cycles
+                    print("I was issued in clock cycle: ", self.clock_cycles, ", OPERATION: ", operation)
+                    self.branch_issued = True
+                    # if (self.branch_issued == True):
+                    #     self.branch_queue.append([operation, r])
                     return True
                    
         elif operation == "JAL":
@@ -211,7 +234,43 @@ class Tomasulo:
         elif operation == "RET":
             #stall until execution is finished
             return
-            
+
+        elif operation == "ADDI":
+            for r in range(self.num_rs[operation]):
+                rs1 = instruction.get("rs1")
+                rd = instruction.get("rd")
+                if self.rs[operation][r].busy is False:
+                    self.fill_qj(operation, r, rs1)
+                    self.rs[operation][r].rd = rd
+                    self.register_stat[rd] = self.rs[operation][r].name
+                    self.rs[operation][r].busy = True
+                    self.rs[operation][r].pc = pc
+                    self.rs[operation][r].A = instruction.get("imm")
+                    self.rs[operation][r].total_ex_cycles = self.instuction_cycles[operation]
+                    # if (operation == "ADD"):
+                    print("I was issued in clock cycle: ", self.clock_cycles, ", OPERATION: ", operation)
+                    self.rs[operation][r].issue_cycle = self.clock_cycles
+                    if (self.branch_issued == True):
+                        self.branch_queue.append([operation, r])
+                    return True
+        
+        elif operation == "NEG":
+            for r in range(self.num_rs[operation]):
+                rs1 = instruction.get("rs1")
+                rd = instruction.get("rd")
+                if self.rs[operation][r].busy is False:
+                    self.fill_qj(operation, r, rs1)
+                    self.rs[operation][r].rd = rd
+                    self.register_stat[rd] = self.rs[operation][r].name
+                    self.rs[operation][r].busy = True
+                    self.rs[operation][r].pc = pc
+                    self.rs[operation][r].total_ex_cycles = self.instuction_cycles[operation]
+                    self.rs[operation][r].issue_cycle = self.clock_cycles
+                    print("I was issued in clock cycle: ", self.clock_cycles, ", OPERATION: ", operation)
+                    if (self.branch_issued == True):
+                        self.branch_queue.append([operation, r])
+                    return True
+        
         else:
             for r in range(self.num_rs[operation]):
                 rs1 = instruction.get("rs1")
@@ -223,14 +282,19 @@ class Tomasulo:
                     self.rs[operation][r].rd = rd
                     self.register_stat[rd] = self.rs[operation][r].name
                     self.rs[operation][r].busy = True
+                    self.rs[operation][r].pc = pc
                     self.rs[operation][r].total_ex_cycles = self.instuction_cycles[operation]
-                    if (operation == "ADD"):
-                        print("I was issued in clock cycle: ", self.clock_cycles)
+                    print("I was issued in clock cycle: ", self.clock_cycles, ", OPERATION: ", operation)
+                    # if (operation == "ADD"):
+                    #     print("I was issued in clock cycle: ", self.clock_cycles)
                     self.rs[operation][r].issue_cycle = self.clock_cycles
+                    if (self.branch_issued == True):
+                        self.branch_queue.append([operation, r])
                     return True
         return False
 
     def execute_all(self):
+        print("Executing Stage of clock cycle: ", self.clock_cycles)
         for inst in self.inst_types:
             for i in range(self.num_rs[inst]):
                 # and self.rs[inst][i].total_ex_cycles > 1):
@@ -247,40 +311,58 @@ class Tomasulo:
 
     def check_to_execute(self, operation, i): ############# REMAINING JAL AND RET
         
-        print("************************************************************************************************")
+        # print("************************************************************************************************")
+        # print("PC is: ", self.glob_pc)
         print("Instruction: ", operation, " ---  Issue Cycle: ", self.rs[operation][i].issue_cycle, " and clock cycles: ", self.clock_cycles)
         if self.rs[operation][i].total_ex_cycles <= 0:
-            if (operation == "ADD"):
-                print("Breaking out of the execute function")
+            # if (operation == "ADD"):
+            print("Breaking out of the execute function")
             return
         if self.rs[operation][i].issue_cycle >= self.clock_cycles:
-            if (operation == "ADD"):
-                print("Cannot issue and execute at the same time!!")
+            # if (operation == "ADD"):
+            print("Cannot issue and execute at the same time!!")
             return 
+        for [op, index] in self.branch_queue:
+            if operation == op and index == i and self.branch_issued == True:
+                return
+            
+        # if self.rs[operation][i].
+        # if self.branch_issued 
         
         if operation == "LOAD":
             if (self.rs[operation][i].qj == None):  # && r is at the head of the load-store queue
                 self.rs[operation][i].A = self.rs[operation][i].vj + self.rs[operation][i].A
-                self.regFile[self.rs[operation][i].rd] = self.memory[self.rs[operation][i].A]
-                self.compute_result(self.rs[operation][i].op, i)
+                self.RegFile[self.rs[operation][i].rd] = self.memory[self.rs[operation][i].A]
                 self.rs[operation][i].execute_cycle = self.clock_cycles
+                print("I am executing in cycle: ", self.clock_cycles, ", operation: ", operation)
                 self.rs[operation][i].total_ex_cycles -= 1
+                self.compute_result(self.rs[operation][i].op, i)
                 # read from memory at address A
                 # Lec 18 Slide 6
 
         elif (operation == "STORE"):
             if (self.rs[operation][i].qj == None):  ##REMOVED --> NOT SAME CONDITION AS SLIDES QK IS EXTRAA # && r is at the head of the load-store queue
                 self.rs[operation][i].A = self.rs[operation][i].vj + self.rs[operation][i].A
-                self.compute_result(self.rs[operation][i].op, i)
                 self.rs[operation][i].execute_cycle = self.clock_cycles
+                print("I am executing in cycle: ", self.clock_cycles, ", operation: ", operation)
                 self.rs[operation][i].total_ex_cycles -= 1
+                self.compute_result(self.rs[operation][i].op, i)
                 # Lec 18 Slide 7.
 
         elif (operation == "BNE"):
             if (self.rs[operation][i].qj == None and self.rs[operation][i].qk == None):
-                self.compute_result(self.rs[operation][i].op, i)
-                self.rs[operation][i].execute_cycle = self.clock_cycles
                 self.rs[operation][i].total_ex_cycles -= 1
+                self.rs[operation][i].execute_cycle = self.clock_cycles
+                print("I am executing in cycle: ", self.clock_cycles, ", operation: ", operation)
+                self.compute_result(self.rs[operation][i].op, i)
+                print("This is the branch Queue: ")
+                for [op, index] in self.branch_queue:
+                    print("Op: ", op, " index: ", index)
+
+                if (self.flush == True and self.rs[operation][i].executed == True):
+                    self.flush_all(operation, i)
+                
+                    # self.branch_queue.clear()
                 
         elif (operation == "JAL" and operation == "RET"):
             return
@@ -288,17 +370,21 @@ class Tomasulo:
 
         else:
             if (self.rs[operation][i].qj == None and self.rs[operation][i].qk == None):
-                print("I am executing in cycle: ", self.clock_cycles)
+                print("I am executing in cycle: ", self.clock_cycles, ", operation: ", operation)
                 self.rs[operation][i].execute_cycle = self.clock_cycles
                 self.rs[operation][i].total_ex_cycles -= 1
                 self.compute_result(self.rs[operation][i].op, i)
+                
         return
 
     def compute_result(self, operation, r):
         # Set the executed bool of the rs to "True" here or before returning from the execute function
         if (self.rs[operation][r].total_ex_cycles == 0):
             self.rs[operation][r].executed = True
-
+            if operation == "BNE":
+                self.branch_issued = False
+                # self.branch_queue.clear()
+    
         if (operation == "ADD"):
             self.rs[operation][r].result = self.rs[operation][r].vj + \
                 self.rs[operation][r].vk
@@ -332,6 +418,7 @@ class Tomasulo:
         #     self.rs[operation][r].result = self.rs[operation][r].vj + self.rs[operation][r].A
             
     def write_all(self):
+        print("Write Stage of clock cycle: ", self.clock_cycles)
         for inst in self.inst_types:
             for i in range(self.num_rs[inst]):
                 if (self.rs[inst][i].executed == True): #self.rs[inst][i] != None and 
@@ -340,28 +427,33 @@ class Tomasulo:
 
     def write(self, operation, i):
         if self.rs[operation][i].execute_cycle >= self.clock_cycles:
-            print("Execute Cyle: ", self.rs[operation][i].execute_cycle, " Clock cycle: ", self.clock_cycles)
+            print("Executed Cycle: ", self.rs[operation][i].execute_cycle, " Current Clock cycle: ", self.clock_cycles)
             return 
         if (self.cdb == False):
             return
         if operation == "STORE":
             if (self.rs[operation][i].qk == None):
                 self.memory[self.rs[operation][i].A] = self.rs[operation][i].vk
-                self.empty_entry(self.rs[operation])
-                self.cdb == False
+                self.empty_entry(self.rs[operation][i])
+                print("I, ", operation, ", am writing in clock cycle: ", self.clock_cycles)
 
         elif (operation == "BNE" or operation == "RET" or operation == "JAL"):
-            # Update Global PC
+            self.glob_pc = self.rs[operation][i].result
+            
+            print("I, ", operation, ", am writing in clock cycle: ", self.clock_cycles, "New PC: ", self.glob_pc)
+            self.empty_entry(self.rs[operation][i])
+            self.cdb = False
             return
         
 
-        else: # For load and arithmeti operations
+        else: # For load and arithmetic operations
             rd = self.rs[operation][i].rd
             r_name = self.rs[operation][i].name
 
             for reg, value in self.register_stat.items(): # gets qi
                 if (self.register_stat[reg] == r_name):
                     self.register_stat[reg] = None
+                    print("Destination Register: ", reg)
                     self.RegFile[reg] = self.rs[operation][i].result
 
             for inst in self.inst_types:
@@ -375,12 +467,12 @@ class Tomasulo:
                         self.rs[inst][sub_entry].qk = None
 
             self.empty_entry(self.rs[operation][i])
-            self.cdb == False
-            print("I am writing in clock cycle: ", self.clock_cycles)
+            self.cdb = False
+            print("I, ", operation, ", am writing in clock cycle: ", self.clock_cycles)
 
     def empty_entry(self, station):
         station.busy = False
-        station.op = None
+        # station.op = None
         station.vj = None
         station.vk = None
         station.qj = None
@@ -390,11 +482,17 @@ class Tomasulo:
         station.A = None
         station.result = None
         station.executed = False
+        r_name = station.name 
+        for reg, value in self.register_stat.items(): # gets qi
+                if (self.register_stat[reg] == r_name):
+                    self.register_stat[reg] = None
  ## c = 4
  ## 
  
  ##############################
  #cycles to exe BNE = 4
+ # Queue of reservation station operation and index -->  
+ 
  #i1
  #i2
  #i3
@@ -409,17 +507,30 @@ class Tomasulo:
  ###  
  
     #need to place flush  
-    def flush_all(self, operation, r):
-        #reset all reservation stations by calling empty_entry
-        for res_st in self.rs[operation]:
-            self.empty_entry(res_st)
-        
-        #reset register status
-        for reg in self.register_stat:
-            self.register_stat[reg] = None
+    def flush_all(self, operation, i):
+        if (self.rs[operation][i].pc > self.rs[operation][i].result): # up
+            for [op, index] in self.branch_queue:
+                # print("Operation: ", op, " & index: ", index)
+                self.empty_entry(self.rs[op][index])
+        elif (self.rs[operation][i].pc < self.rs[operation][i].result): #down
+            print("I would like to branch down the program")
+            # compare target address with pcs in queue --> flush pcs < target address
+            for [op, index] in self.branch_queue:
+                print("Op: ", op, " index: ", index, " PC: ", self.rs[op][index].pc)
+                if (self.rs[op][index].pc < self.rs[operation][i].result):
+                    self.empty_entry(self.rs[op][index])
 
-        # Reset program counter (PC) to target address
-        self.pc = self.rs[operation][r].result
+        
+        # #reset all reservation stations by calling empty_entry
+        # for res_st in self.rs[operation]:
+        #     self.empty_entry(res_st)
+        
+        # #reset register status
+        # for reg in self.register_stat:
+        #     self.register_stat[reg] = None
+
+        # # Reset program counter (PC) to target address
+        # self.pc = self.rs[operation][i].result
 
             
             
@@ -449,42 +560,47 @@ class Tomasulo:
             print(f"{i}: {self.memory[i]}")
 
     def run(self):
-        pc = 0
+        # pc = 0
         # Each iteration represents a clock cycle
+        total_instructions = len(self.instructions)
+        # total_instructions -= 1
         while True:
+            print("*******************************************************************************************************")
+            print("WE ARE IN CLOCK CYCLE: ", self.clock_cycles + 1)
             ctr = 0
+            self.cdb = True
             self.clock_cycles += 1
-            print("I am standing in the begining of the while loop")
-            # for i in range(70):
-            #     print('*', end='')
-            # print("\nNEW INSTRUCTION: ")
-            instruction = self.fetch(pc)
-            if (pc < len(self.instructions)): #check if last instruction
-                print("PC is ", pc, " which is less than ",
-                      len(self.instructions))
-                if (self.issue(instruction, pc)): # issue or not issue --> stall
-                    pc += 1
+            instruction = self.fetch(self.glob_pc)
+            print("Before - PC: ", self.glob_pc)
+            if (self.glob_pc < total_instructions): #check if last instruction
+                if (self.issue(instruction, self.glob_pc)): # issue or not issue --> stall
+                    self.glob_pc += 1
             self.execute_all()
             self.write_all()
-            
-            # print("Just Incremented the clock cycles by 1")
-            if (pc == len(self.instructions)):
+            self.print_reservation_stations()
+            self.print_register_status()
+            self.register_file()   
+            if (self.glob_pc == total_instructions - 1):
                 for inst in self.inst_types: #check if rs are empty
                     for i in range(self.num_rs[inst]):
                         if (self.rs[inst][i].busy == False):
                             ctr += 1
             # and pc == len(self.instructions)):
+
             # print("Counter: ", ctr, " Sum: ", sum(self.num_rs.values()))
             if (ctr == sum(self.num_rs.values())): #check if pc is last instruction
                 print("We will break here!")
                 break
+            if (self.clock_cycles == 10):
+                break   
+
         print("Execution completed.")
         self.print_reservation_stations()
         self.print_register_status()
         self.register_file()
         # self.memory_state()
 
-        print("Clock Cycles: ", self.clock_cycles)
+        print("Total Clock Cycles: ", self.clock_cycles)
 
 
 # Need to read from a file and parse into a similar array
@@ -497,20 +613,14 @@ class Tomasulo:
 instructions = [
     {"op": "ADD", "rd": "R1", "rs1": "R2", "rs2": "R3"},
     {"op": "NAND", "rd": "R4", "rs1": "R5", "rs2": "R6"},
+    {"op": "BNE", "rs1": "R2", "rs2": "R3", "imm": -1},
+    {"op": "LOAD", "rs1": "R0", "rd": "R3", "imm": 0},
+    {"op": "ADD", "rd": "R5", "rs1": "R6", "rs2": "R7"},
+    {"op": "ADDI", "rd": "R0", "rs1": "R2", "imm": 6}
+    # {"op": "ADDI", "rd": "R6", "rs1": "R2", "imm": 7},
+    # {"op": "NEG", "rd": "R5", "rs1": "R4"}
 ]
 var_rs = {
-    "LOAD": 1,
-    "STORE": 1,
-    "BNE": 1,
-    "JAL": 1,
-    "RET": 1,
-    "ADD": 2,
-    "ADDI": 1,
-    "NEG": 1,
-    "NAND": 1,
-    "SLL": 1
-}
-execution_cycles = {
     "LOAD": 1,
     "STORE": 1,
     "BNE": 1,
@@ -519,7 +629,19 @@ execution_cycles = {
     "ADD": 3,
     "ADDI": 1,
     "NEG": 1,
-    "NAND": 6,
+    "NAND": 1,
+    "SLL": 1
+}
+execution_cycles = {
+    "LOAD": 3,
+    "STORE": 1,
+    "BNE": 3,
+    "JAL": 1,
+    "RET": 1,
+    "ADD": 3,
+    "ADDI": 4,
+    "NEG": 1,
+    "NAND": 3,
     "SLL": 1
 }
 
@@ -534,3 +656,15 @@ tomasulo.run()
 #     if inst not in self.inst_types:
 #         print("Error: Instruction type not recognized.")
 #         return
+
+# Testing Branch
+# instructions = [
+#     {"op": "ADD", "rd": "R1", "rs1": "R2", "rs2": "R3"},
+#     {"op": "BNE", "rs1": "R2", "rs2": "R3", "imm": 3},
+#     {"op": "NAND", "rd": "R4", "rs1": "R5", "rs2": "R6"},
+#     {"op": "LOAD", "rs1": "R0", "rd": "R3", "imm": 0},
+#     {"op": "ADD", "rd": "R5", "rs1": "R6", "rs2": "R7"},
+#     {"op": "ADDI", "rd": "R0", "rs1": "R2", "imm": 6}
+#     # {"op": "ADDI", "rd": "R6", "rs1": "R2", "imm": 7},
+#     # {"op": "NEG", "rd": "R5", "rs1": "R4"}
+# ]
