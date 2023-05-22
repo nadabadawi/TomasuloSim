@@ -1,7 +1,6 @@
 # Notes:
 #   - Need to read from a file and parse into a similar array (input instruction array)
 #   - Validation of instructions provided should be handled. Ex: Register names and bounds should be valid & their format
-#   - Need to give priority to older instruction to write
 
 # Done
 #   - Ensure that R0 does not get overwritten
@@ -12,14 +11,14 @@
 #   - Number of execution cycles for each instruction should be input from the user
 #   - Flushing for BNE
 #   - Stall cycles from executing in case of branch
-
+#   - JAL and RET Stalling
+#   - Conditions for each instruction type
+#   - WAW Hazard
 
 ##############################
 #What's Left:
-# WAW Hazard
-# JAL and RET Stalling
-# Conditions for each instruction type
-# Storing/Loading addresses are not equal --> if they are, do not issue second instruction
+#   - Need to give priority to older instruction to write
+#   - Storing/Loading addresses are not equal --> if they are, do not issue second instruction
 
 class ReservationStation:
     def __init__(self, index, name, op, busy=False, vj=None, vk=None, qj=None, qk=None, rd=None, offset=None, A=None, pc = None):
@@ -171,6 +170,7 @@ class Tomasulo:
         if self.jal_issued == True: #stall for jal
             return False
         
+        
         operation = instruction.get("op")
         for [op, index] in self.branch_queue:
             if pc == self.rs[op][index].pc:
@@ -180,6 +180,8 @@ class Tomasulo:
         if operation == "LOAD":
             rs1 = instruction.get("rs1")
             rd = instruction.get("rd")
+            if self.register_stat[rd] != None:
+                return False
             for r in range(self.num_rs[operation]):
                 if self.rs[operation][r].busy is False:
                     self.fill_qj(operation, r, rs1)
@@ -232,6 +234,8 @@ class Tomasulo:
                     return True
                    
         elif operation == "JAL":
+            if self.register_stat["R1"] != None:
+                return False
             for r in range(self.num_rs[operation]):
                 if self.rs[operation][r].busy is False:
                     # Fill in A
@@ -277,6 +281,8 @@ class Tomasulo:
             for r in range(self.num_rs[operation]):
                 rs1 = instruction.get("rs1")
                 rd = instruction.get("rd")
+                if self.register_stat[rd] != None:
+                    return False
                 if self.rs[operation][r].busy is False:
                     self.fill_qj(operation, r, rs1)
                     self.rs[operation][r].rd = rd
@@ -296,6 +302,8 @@ class Tomasulo:
             for r in range(self.num_rs[operation]):
                 rs1 = instruction.get("rs1")
                 rd = instruction.get("rd")
+                if self.register_stat[rd] != None:
+                    return False
                 if self.rs[operation][r].busy is False:
                     self.fill_qj(operation, r, rs1)
                     self.rs[operation][r].rd = rd
@@ -314,6 +322,8 @@ class Tomasulo:
                 rs1 = instruction.get("rs1")
                 rs2 = instruction.get("rs2")
                 rd = instruction.get("rd")
+                if self.register_stat[rd] != None:
+                    return False
                 if self.rs[operation][r].busy is False:
                     self.fill_qj(operation, r, rs1)
                     self.fill_qk(operation, r, rs2)
@@ -618,9 +628,9 @@ class Tomasulo:
                     self.glob_pc += 1
             self.execute_all()
             self.write_all()
-            # self.print_reservation_stations()
-            # self.print_register_status()
-            # self.register_file()   
+            self.print_reservation_stations()
+            self.print_register_status()
+            self.register_file()   
             print("Glob_PC: ", self.glob_pc, "Total Instruciton: ", total_instructions - 1)
             if (self.glob_pc == total_instructions):
                 for inst in self.inst_types: #check if rs are empty
@@ -637,10 +647,10 @@ class Tomasulo:
             #     break   
 
         print("Execution completed.")
-        # self.print_reservation_stations()
-        # self.print_register_status()
-        # self.register_file()
-        self.memory_state()
+        self.print_reservation_stations()
+        self.print_register_status()
+        self.register_file()
+        # self.memory_state()
 
         print("Total Clock Cycles: ", self.clock_cycles)
 
@@ -664,9 +674,9 @@ class MainMenu:
 #     {"op": "NAND", "rd": "R5", "rs1": "R3", "rs2": "R6"},
 # ]
 instructions = [
-    {"op": "STORE", "rs1": "R1", "rs2": "R2", "imm": 0},
-    # {"op": "ADD", "rd": "R1", "rs1": "R2", "rs2": "R3"},
-    # {"op": "NAND", "rd": "R4", "rs1": "R5", "rs2": "R6"},
+    # {"op": "STORE", "rs1": "R1", "rs2": "R2", "imm": 0},
+    {"op": "ADD", "rd": "R4", "rs1": "R2", "rs2": "R3"},
+    {"op": "NAND", "rd": "R4", "rs1": "R5", "rs2": "R6"},
     # {"op": "JAL", "imm": 2},
     # {"op": "LOAD", "rd": "R4", "rs1": "R0", "imm": 0},
     # {"op": "ADD", "rd": "R5", "rs1": "R3", "rs2": "R2"},
@@ -694,7 +704,7 @@ execution_cycles = {
     "BNE": 3,
     "JAL": 3,
     "RET": 1,
-    "ADD": 3,
+    "ADD": 8,
     "ADDI": 4,
     "NEG": 1,
     "NAND": 3,
